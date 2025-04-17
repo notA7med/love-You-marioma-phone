@@ -1,0 +1,30 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background-color: #000;
+}
+canvas {
+    body {
+        margin: 0;
+        overflow: hidden;
+        touch-action: manipulation;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+    }
+    
+    canvas {
+        display: block;
+        margin: 0 auto;
+    }
+    body {
+        touch-action: manipulation; /* لمنع التكبير/التصغير */
+        overflow: hidden;
+    }
+    canvas {
+        display: block; /* يزيل المسافات البيضاء حول الكانفاس */
+    }
+    display: block;
+    margin: auto;
+    background-color: #fff;
+}
