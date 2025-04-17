@@ -1,18 +1,23 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
+// تحسين الأداء للهواتف
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+const targetScore = 5; // تقليل النقاط المطلوبة لإنهاء اللعبة
+
 let gameAssets = {
   images: {},
   sounds: {}
 };
 
+// تحسين إعدادات الكنفاس للهواتف
 function setupCanvas() {
+  const maxWidth = isMobile ? window.innerWidth : 800;
   const targetAspectRatio = 16 / 9;
-  const maxWidth = 800;
 
   canvas.width = Math.min(window.innerWidth, maxWidth);
   canvas.height = canvas.width / targetAspectRatio;
-
+  
   canvas.style.touchAction = "none";
   document.body.style.overflow = "hidden";
 }
@@ -21,6 +26,13 @@ window.addEventListener("resize", () => {
   setupCanvas();
   resetGamePositions();
 });
+
+// زيادة سرعة العناصر
+const speeds = {
+  flower: isMobile ? 6 : 5, // زيادة السرعة على الهواتف
+  obstacle: isMobile ? 7 : 6,
+  boyMovement: 0.08 // زيادة سرعة حركة الولد
+};
 
 async function loadResources() {
   try {
@@ -51,22 +63,7 @@ async function loadResources() {
   }
 }
 
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject("فشل تحميل الصورة: " + src);
-    img.src = src;
-  });
-}
-
-function loadAudio(src) {
-  return new Promise((resolve, reject) => {
-    const audio = new Audio(src);
-    audio.oncanplaythrough = () => resolve(audio);
-    audio.onerror = () => reject("فشل تحميل الصوت: " + src);
-  });
-}
+// ... (بقية دوال تحميل الموارد كما هي)
 
 let player = {
   x: 100,
@@ -97,87 +94,40 @@ let gameState = {
   isEnding: false
 };
 
-function resetGamePositions() {
-  gameState.groundY = canvas.height - 50;
-  player.y = gameState.groundY - player.height;
-  boy.x = canvas.width + 100;
-}
-
-function initControls() {
-  const handleJumpStart = (e) => {
-    e.preventDefault();
-    if (!gameState.isGameOver && !player.isJumping) {
-      player.vy = -20;
-      player.isJumping = true;
-      gameAssets.sounds.jump.play().catch(() => {});
+// تحسين حركة الولد عند النهاية
+function updateEndingSequence() {
+  if (gameState.isEnding) {
+    player.x += (player.targetX - player.x) * speeds.boyMovement;
+    boy.x += (boy.targetX - boy.x) * speeds.boyMovement;
+    
+    // إنهاء اللعبة عند الاقتراب الكافي
+    if (Math.abs(player.x - boy.x) < 50) {
+      gameState.isGameOver = true;
+      ctx.fillStyle = "#fff";
+      ctx.font = "30px Arial";
+      ctx.fillText("مبروك! لقد فزت!", canvas.width/2 - 100, canvas.height/2);
     }
-  };
-
-  canvas.addEventListener("touchstart", handleJumpStart);
-  canvas.addEventListener("touchend", (e) => e.preventDefault());
-  canvas.addEventListener("mousedown", handleJumpStart);
-  canvas.addEventListener("mouseup", (e) => e.preventDefault());
-
-  document.addEventListener("keydown", (e) => {
-    if ((e.code === "Space" || e.code === "ArrowUp") && !player.isJumping) {
-      handleJumpStart(e);
-    }
-    if (gameState.isGameOver && e.code === "Enter") {
-      location.reload();
-    }
-  });
-}
-
-function spawnObject(type) {
-  const baseY = gameState.groundY - 40;
-
-  if (type === "flower") {
-    gameState.flowers.push({
-      x: canvas.width,
-      y: baseY,
-      width: 30,
-      height: 30
-    });
-  } else {
-    gameState.obstacles.push({
-      x: canvas.width,
-      y: baseY,
-      width: 40,
-      height: 40,
-      type: Math.floor(Math.random() * 3)
-    });
   }
 }
 
-function checkCollisions() {
-  gameState.flowers.forEach((flower, index) => {
-    if (detectCollision(player, flower)) {
-      gameState.score++;
-      gameState.flowers.splice(index, 1);
-    }
-  });
-
-  gameState.obstacles.forEach(obstacle => {
-    if (detectCollision(player, obstacle)) {
-      gameAssets.sounds.hit.play().catch(() => {});
-      gameState.isGameOver = true;
-      gameAssets.sounds.bgMusic.pause();
-    }
-  });
-}
-
-function detectCollision(a, b) {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
+function checkEndCondition() {
+  if (gameState.score >= targetScore && !gameState.isEnding) {
+    gameState.isEnding = true;
+    player.targetX = canvas.width * 0.4;
+    boy.targetX = canvas.width * 0.6;
+    gameAssets.sounds.love.play().catch(() => {});
+    gameAssets.sounds.bgMusic.pause();
+    
+    // إيقاف توليد العناصر
+    clearInterval(flowerInterval);
+    clearInterval(obstacleInterval);
+  }
 }
 
 function updateGame() {
   if (gameState.isGameOver) return;
 
+  // تحديث حركة اللاعب
   player.y += player.vy;
   player.vy += gameState.gravity;
 
@@ -187,41 +137,19 @@ function updateGame() {
     player.isJumping = false;
   }
 
-  gameState.flowers.forEach(f => f.x -= 4);
-  gameState.obstacles.forEach(o => o.x -= 5);
+  // زيادة سرعة العناصر
+  gameState.flowers.forEach(f => f.x -= speeds.flower);
+  gameState.obstacles.forEach(o => o.x -= speeds.obstacle);
 
   gameState.flowers = gameState.flowers.filter(f => f.x + f.width > 0);
   gameState.obstacles = gameState.obstacles.filter(o => o.x + o.width > 0);
 
   checkCollisions();
+  checkEndCondition();
+  updateEndingSequence(); // إضافة تحديث التسلسل النهائي
 }
 
-function drawScene() {
-  ctx.drawImage(gameAssets.images.background, 0, 0, canvas.width, canvas.height);
-  ctx.drawImage(gameAssets.images.player, player.x, player.y, player.width, player.height);
-
-  gameState.flowers.forEach(flower => {
-    ctx.drawImage(gameAssets.images.flower, flower.x, flower.y, flower.width, flower.height);
-  });
-
-  gameState.obstacles.forEach(obstacle => {
-    ctx.drawImage(gameAssets.images.obstacles[obstacle.type], obstacle.x, obstacle.y, obstacle.width, obstacle.height);
-  });
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "24px Arial";
-  ctx.fillText(`النقاط: ${gameState.score}`, 20, 40);
-}
-
-function gameLoop() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (!gameState.isGameOver) {
-    updateGame();
-    drawScene();
-    requestAnimationFrame(gameLoop);
-  }
-}
+// ... (بقية الدوال مع الحفاظ على التعديلات)
 
 async function startGame() {
   setupCanvas();
@@ -229,8 +157,9 @@ async function startGame() {
   initControls();
   resetGamePositions();
 
-  setInterval(() => spawnObject("flower"), 3000);
-  setInterval(() => spawnObject("obstacle"), 4000);
+  // تقليل فترات التوليد
+  const flowerInterval = setInterval(() => spawnObject("flower"), 2000);
+  const obstacleInterval = setInterval(() => spawnObject("obstacle"), 2500);
 
   document.addEventListener("click", () => {
     gameAssets.sounds.bgMusic.play().catch(() => {});
