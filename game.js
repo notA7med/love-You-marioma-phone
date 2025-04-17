@@ -57,11 +57,6 @@ async function loadResources() {
 
     gameAssets.sounds.bgMusic.loop = true;
 
-  } catch (error) {
-    console.error("فشل تحميل الموارد:", error);
-    alert("الملفات المطلوبة مفقودة!");
-  }
-}
 
 // ... (بقية دوال تحميل الموارد كما هي)
 
