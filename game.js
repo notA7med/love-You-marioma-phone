@@ -1,332 +1,245 @@
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
 
-// الأساسيات
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-const baseURL = window.location.href.replace(/\/[^/]*$/, '') + '/';
-let gameAssets = { images: {}, sounds: {} };
 
-// إعدادات التحكم
-const controls = {
-  jumpForce: isMobile ? -18 : -20,
-  gravity: isMobile ? 0.7 : 0.8,
-  speeds: {
-    flower: isMobile ? 6 : 5,
-    obstacle: isMobile ? 7 : 6,
-    boy: 0.08
-  }
-};
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
 
-// حالة اللعبة
-let gameState = {
-  groundY: 0,
-  score: 0,
-  isGameOver: false,
-  isEnding: false,
-  flowers: [],
-  obstacles: [],
-  intervals: { flowers: null, obstacles: null }
-};
-
-// العناصر الرئيسية
-const player = {
-  x: 100,
-  y: 0,
-  width: 50,
-  height: 80,
-  vy: 0,
-  isJumping: false,
-  targetX: 100
-};
-
-const boy = {
-  x: 0,
-  y: 270,
-  width: 60,
-  height: 100,
-  targetX: 600
-};
-
-// تحميل الموارد مع تتبع المسارات
-async function loadAsset(type, path) {
-  const fullPath = new URL(path, baseURL).href;
-  try {
-    const response = await fetch(fullPath);
-    if (!response.ok) throw new Error(`Status: ${response.status}`);
-    return type === 'image' ? await loadImage(fullPath) : await loadAudio(fullPath);
-  } catch (error) {
-    console.error(`فشل تحميل ${type === 'image' ? 'الصورة' : 'الصوت'}: ${fullPath}`);
-    throw error;
-  }
-}
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      console.log(`تم تحميل الصورة: ${src}`);
-      resolve(img);
+    let gameAssets = {
+      images: {},
+      sounds: {}
     };
-    img.onerror = reject;
-    img.src = src;
-  });
-}
 
-function loadAudio(src) {
-  return new Promise((resolve, reject) => {
-    const audio = new Audio(src);
-    audio.oncanplaythrough = () => {
-      console.log(`تم تحميل الصوت: ${src}`);
-      resolve(audio);
-    };
-    audio.onerror = reject;
-    audio.preload = 'auto';
-  });
-}
+    function setupCanvas() {
+      const targetAspectRatio = 16 / 9;
+      const maxWidth = 800;
 
-// إعداد الكانفاس
-function setupCanvas() {
-  const maxWidth = isMobile ? window.innerWidth : 800;
-  const targetRatio = 16 / 9;
-  
-  canvas.width = Math.min(window.innerWidth, maxWidth);
-  canvas.height = canvas.width / targetRatio;
-  canvas.style.touchAction = "none";
-  
-  gameState.groundY = canvas.height - 50;
-  player.y = gameState.groundY - player.height;
-}
+      canvas.width = Math.min(window.innerWidth, maxWidth);
+      canvas.height = canvas.width / targetAspectRatio;
 
-// نظام التحكم
-function initControls() {
-  const handleAction = (e) => {
-    e.preventDefault();
-    if (!player.isJumping && !gameState.isGameOver) {
-      player.vy = controls.jumpForce;
-      player.isJumping = true;
-      gameAssets.sounds.jump.play().catch(console.error);
+      canvas.style.touchAction = "none";
+      document.body.style.overflow = "hidden";
     }
-  };
 
-  canvas.addEventListener('click', handleAction);
-  canvas.addEventListener('touchstart', handleAction);
-}
+    window.addEventListener("resize", () => {
+      setupCanvas();
+      resetGamePositions();
+    });
 
-// توليد العناصر
-function spawnObject(type) {
-  const x = canvas.width + 100;
-  const baseY = gameState.groundY - 40;
+    async function loadResources() {
+      try {
+        gameAssets.images = {
+          background: await loadImage("./images/background.png"),
+          player: await loadImage("./images/girl.png"),
+          boy: await loadImage("./images/boy.png"),
+          flower: await loadImage("./images/flower.png"),
+          obstacles: [
+            await loadImage("./images/fire.png"),
+            await loadImage("./images/hole.png"),
+            await loadImage("./images/box.png")
+          ]
+        };
 
-  if (type === "flower") {
-    gameState.flowers.push({ x, y: baseY, width: 30, height: 30 });
-  } else {
-    const obstacle = {
-      x,
-      y: baseY,
-      width: 40,
-      height: 40,
-      img: gameAssets.images.obstacles[Math.floor(Math.random() * 3)]
-    };
-    gameState.obstacles.push(obstacle);
-  }
-}
+        gameAssets.sounds = {
+          jump: await loadAudio("./sounds/jump.mp3"),
+          hit: await loadAudio("./sounds/hit.mp3"),
+          bgMusic: await loadAudio("./sounds/bg.mp3"),
+          love: await loadAudio("./sounds/love.mp3")
+        };
 
-// الاصطدامات
-function checkCollisions() {
-  gameState.flowers.forEach((flower, i) => {
-    if (isColliding(player, flower)) {
-      gameState.flowers.splice(i, 1);
-      gameState.score++;
+        gameAssets.sounds.bgMusic.loop = true;
+
+      } catch (error) {
+        console.error("فشل تحميل الموارد:", error);
+        alert("الملفات المطلوبة مفقودة!");
+      }
     }
-  });
 
-  gameState.obstacles.forEach(obstacle => {
-    if (isColliding(player, obstacle)) {
-      gameState.isGameOver = true;
-      gameAssets.sounds.hit.play();
-      clearIntervals();
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject("فشل تحميل الصورة: " + src);
+        img.src = src;
+      });
     }
-  });
-}
 
-function isColliding(a, b) {
-  return a.x < b.x + b.width &&
-         a.x + a.width > b.x &&
-         a.y < b.y + b.height &&
-         a.y + a.height > b.y;
-}
+    function loadAudio(src) {
+      return new Promise((resolve, reject) => {
+        const audio = new Audio(src);
+        audio.oncanplaythrough = () => resolve(audio);
+        audio.onerror = () => reject("فشل تحميل الصوت: " + src);
+      });
+    }
 
-// نظام النهاية
-function updateEnding() {
-  if (!gameState.isEnding || gameState.isGameOver) return;
-
-  player.x += (player.targetX - player.x) * controls.speeds.boy;
-  boy.x += (boy.targetX - boy.x) * controls.speeds.boy;
-
-  if (Math.abs(player.x - boy.x) < 50) {
-    gameState.isGameOver = true;
-    showEndMessage();
-    clearIntervals();
-  }
-}
-
-function showEndMessage() {
-  ctx.fillStyle = "#fff";
-  ctx.font = "30px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText("مبروك! فزت!", canvas.width/2, canvas.height/2);
-}
-
-// الحلقة الرئيسية
-function gameLoop() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
-  if (!gameState.isGameOver) {
-    updateGame();
-    drawGame();
-  }
-  
-  requestAnimationFrame(gameLoop);
-}
-
-function updateGame() {
-  // الحركة الأساسية
-  player.y += player.vy;
-  player.vy += controls.gravity;
-
-  // الحدود السفلية
-  if (player.y + player.height > gameState.groundY) {
-    player.y = gameState.groundY - player.height;
-    player.vy = 0;
-    player.isJumping = false;
-  }
-
-  // حركة العناصر
-  gameState.flowers.forEach(f => f.x -= controls.speeds.flower);
-  gameState.obstacles.forEach(o => o.x -= controls.speeds.obstacle);
-
-  // التحديثات
-  checkCollisions();
-  checkEndCondition();
-  updateEnding();
-}
-
-function drawGame() {
-  // الخلفية
-  ctx.drawImage(gameAssets.images.background, 0, 0, canvas.width, canvas.height);
-
-  // الشخصيات
-  ctx.drawImage(gameAssets.images.player, player.x, player.y, player.width, player.height);
-  if (gameState.isEnding) {
-    ctx.drawImage(gameAssets.images.boy, boy.x, boy.y, boy.width, boy.height);
-  }
-
-  // العناصر
-  gameState.flowers.forEach(f => {
-    ctx.drawImage(gameAssets.images.flower, f.x, f.y, f.width, f.height);
-  });
-
-  gameState.obstacles.forEach(o => {
-    ctx.drawImage(o.img, o.x, o.y, o.width, o.height);
-  });
-
-  // النقاط
-  ctx.fillStyle = "#fff";
-  ctx.font = "24px Arial";
-  ctx.fillText(النقاط: ${gameState.score}, 20, 40);
-}
-
-// دوال مساعدة
-function clearIntervals() {
-  clearInterval(gameState.intervals.flowers);
-  clearInterval(gameState.intervals.obstacles);
-}
-
-function checkEndCondition() {
-  if (gameState.score >= 5 && !gameState.isEnding) {
-    gameState.isEnding = true;
-    player.targetX = canvas.width * 0.4;
-    boy.targetX = canvas.width * 0.6;
-    gameAssets.sounds.love.play();
-    gameAssets.sounds.bgMusic.pause();
-  }
-}
-
-async function startGame() {
-  try {
-    setupCanvas();
-    
-    // تحميل الموارد
-    gameAssets.images = {
-      background: await loadAsset('image', './images/background.png'),
-      player: await loadAsset('image', './images/girl.png'),
-      boy: await loadAsset('image', './images/boy.png'),
-      flower: await loadAsset('image', './images/flower.png'),
-      obstacles: [
-        await loadAsset('image', './images/fire.png'),
-        await loadAsset('image', './images/hole.png'),
-        await loadAsset('image', './images/box.png')
-      ]
+    let player = {
+      x: 100,
+      y: 0,
+      width: 50,
+      height: 80,
+      vy: 0,
+      isJumping: false,
+      targetX: 100
     };
 
-    gameAssets.sounds = {
-      jump: await loadAsset('audio', './sounds/jump.mp3'),
-      hit: await loadAsset('audio', './sounds/hit.mp3'),
-      bgMusic: await loadAsset('audio', './sounds/bg.mp3'),
-      love: await loadAsset('audio', './sounds/love.mp3')
+    let boy = {
+      x: 0,
+      y: 270,
+      width: 60,
+      height: 100,
+      targetX: 600
     };
 
-    // البدء
-    initControls();
-    resetGame();
-    
-    gameState.intervals.flowers = setInterval(() => spawnObject("flower"), 2000);
-    gameState.intervals.obstacles = setInterval(() => spawnObject("obstacle"), 2500);
+    let gameState = {
+      groundY: 0,
+      gravity: 0.8,
+      flowers: [],
+      obstacles: [],
+      particles: [],
+      score: 0,
+      isGameOver: false,
+      isEnding: false
+    };
 
-    // تشغيل الموسيقى
-    document.addEventListener('click', () => gameAssets.sounds.bgMusic.play(), { once: true });
-    document.addEventListener('touchstart', () => gameAssets.sounds.bgMusic.play(), { once: true });
+    function resetGamePositions() {
+      gameState.groundY = canvas.height - 50;
+      player.y = gameState.groundY - player.height;
+      boy.x = canvas.width + 100;
+    }
 
-    gameLoop();
-  } catch (error) {
-    console.error("خطأ في التشغيل:", error);
-    alert("الرجاء التحقق من ملفات اللعبة!");
-  }
-}
+    function initControls() {
+      const handleJumpStart = (e) => {
+        e.preventDefault();
+        if (!gameState.isGameOver && !player.isJumping) {
+          player.vy = -20;
+          player.isJumping = true;
+          gameAssets.sounds.jump.play().catch(() => {});
+        }
+      };
 
-function resetGame() {
-  player.y = gameState.groundY - player.height;
-  boy.x = canvas.width + 100;
-  gameState.flowers = [];
-  gameState.obstacles = [];
-  gameState.score = 0;
-  gameState.isGameOver = false;
-  gameState.isEnding = false;
-}
+      canvas.addEventListener("touchstart", handleJumpStart);
+      canvas.addEventListener("touchend", (e) => e.preventDefault());
+      canvas.addEventListener("mousedown", handleJumpStart);
+      canvas.addEventListener("mouseup", (e) => e.preventDefault());
 
-// التحقق النهائي من الملفات
-function finalCheck() {
-  const requiredFiles = [
-    './images/background.png',
-    './images/girl.png',
-    './images/boy.png',
-    './images/flower.png',
-    './images/fire.png',
-    './images/hole.png',
-    './images/box.png',
-    './sounds/jump.mp3',
-    './sounds/hit.mp3',
-    './sounds/bg.mp3',
-    './sounds/love.mp3'
-  ];
+      document.addEventListener("keydown", (e) => {
+        if ((e.code === "Space" || e.code === "ArrowUp") && !player.isJumping) {
+          handleJumpStart(e);
+        }
+        if (gameState.isGameOver && e.code === "Enter") {
+          location.reload();
+        }
+      });
+    }
 
-  requiredFiles.forEach(file => {
-    fetch(file)
-      .then(res => console.log(res.ok ? ✅ ${file} : ❌ ${file}))
-      .catch(() => console.error(🚫 ${file}));
-  });
-}
+    function spawnObject(type) {
+      const baseY = gameState.groundY - 40;
 
-// بدء التشغيل
-finalCheck();
-startGame();
+      if (type === "flower") {
+        gameState.flowers.push({
+          x: canvas.width,
+          y: baseY,
+          width: 30,
+          height: 30
+        });
+      } else {
+        gameState.obstacles.push({
+          x: canvas.width,
+          y: baseY,
+          width: 40,
+          height: 40,
+          type: Math.floor(Math.random() * 3)
+        });
+      }
+    }
+
+    function checkCollisions() {
+      gameState.flowers.forEach((flower, index) => {
+        if (detectCollision(player, flower)) {
+          gameState.score++;
+          gameState.flowers.splice(index, 1);
+        }
+      });
+
+      gameState.obstacles.forEach(obstacle => {
+        if (detectCollision(player, obstacle)) {
+          gameAssets.sounds.hit.play().catch(() => {});
+          gameState.isGameOver = true;
+          gameAssets.sounds.bgMusic.pause();
+        }
+      });
+    }
+
+    function detectCollision(a, b) {
+      return (
+        a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y
+      );
+    }
+
+    function updateGame() {
+      if (gameState.isGameOver) return;
+
+      player.y += player.vy;
+      player.vy += gameState.gravity;
+
+      if (player.y + player.height > gameState.groundY) {
+        player.y = gameState.groundY - player.height;
+        player.vy = 0;
+        player.isJumping = false;
+      }
+
+      gameState.flowers.forEach(f => f.x -= 4);
+      gameState.obstacles.forEach(o => o.x -= 5);
+
+      gameState.flowers = gameState.flowers.filter(f => f.x + f.width > 0);
+      gameState.obstacles = gameState.obstacles.filter(o => o.x + o.width > 0);
+
+      checkCollisions();
+    }
+
+    function drawScene() {
+      ctx.drawImage(gameAssets.images.background, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(gameAssets.images.player, player.x, player.y, player.width, player.height);
+
+      gameState.flowers.forEach(flower => {
+        ctx.drawImage(gameAssets.images.flower, flower.x, flower.y, flower.width, flower.height);
+      });
+
+      gameState.obstacles.forEach(obstacle => {
+        ctx.drawImage(gameAssets.images.obstacles[obstacle.type], obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+      });
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "24px Arial";
+      ctx.fillText(`النقاط: ${gameState.score}`, 20, 40);
+    }
+
+    function gameLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (!gameState.isGameOver) {
+        updateGame();
+        drawScene();
+        requestAnimationFrame(gameLoop);
+      }
+    }
+
+    async function startGame() {
+      setupCanvas();
+      await loadResources();
+      initControls();
+      resetGamePositions();
+
+      setInterval(() => spawnObject("flower"), 3000);
+      setInterval(() => spawnObject("obstacle"), 4000);
+
+      document.addEventListener("click", () => {
+        gameAssets.sounds.bgMusic.play().catch(() => {});
+      }, { once: true });
+
+      gameLoop();
+    }
+
+    startGame();
+
