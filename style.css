@@ -2,29 +2,40 @@ body {
     margin: 0;
     overflow: hidden;
     background-color: #000;
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
+
 canvas {
-    body {
-        margin: 0;
-        overflow: hidden;
-        touch-action: manipulation;
-        -webkit-touch-callout: none;
-        -webkit-user-select: none;
-        user-select: none;
-    }
-    
-    canvas {
-        display: block;
-        margin: 0 auto;
-    }
-    body {
-        touch-action: manipulation; /* لمنع التكبير/التصغير */
-        overflow: hidden;
-    }
-    canvas {
-        display: block; /* يزيل المسافات البيضاء حول الكانفاس */
-    }
     display: block;
-    margin: auto;
-    background-color: #fff;
+    margin: 0 auto;
+    background: #f0f0f0;
+    touch-action: none;
 }
+
+button {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 24px;
+    padding: 15px 30px;
+    background: #ff4444;
+    color: white;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    transition: transform 0.2s;
+    z-index: 100;
+    touch-action: manipulation;
+}
+
+button:active {
+    transform: translate(-50%, -50%) scale(0.95);
+}
+
+/* تعديل خاص لمواقع الأزرار */
+button:nth-of-type(1) { top: 50%; } /* زر البداية */
+button:nth-of-type(2) { top: 60%; } /* زر الإعادة */
