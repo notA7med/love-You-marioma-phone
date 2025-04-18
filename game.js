@@ -1,289 +1,327 @@
+// تهيئة العناصر الأساسية
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-let gameAssets = {
-  images: {},
-  sounds: {}
-};
-
-function setupCanvas() {
-  const targetAspectRatio = 16 / 9;
-  const maxWidth = 800;
-  canvas.width = Math.min(window.innerWidth, maxWidth);
-  canvas.height = canvas.width / targetAspectRatio;
-  canvas.style.touchAction = "none";
-  document.body.style.overflow = "hidden";
+// تكييف حجم Canvas مع الشاشة
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    ground = canvas.height - 100;
+    player.y = ground - player.height;
+    player.targetY = ground - player.height;
 }
+window.addEventListener("resize", resizeCanvas);
 
-window.addEventListener("resize", () => {
-  setupCanvas();
-  resetGamePositions();
-});
-
-async function loadResources() {
-  try {
-    gameAssets.images = {
-      background: await loadImage("./images/background.png"),
-      player: await loadImage("./images/girl.png"),
-      boy: await loadImage("./images/boy.png"),
-      flower: await loadImage("./images/flower.png"),
-      obstacles: [
-        await loadImage("./images/fire.png"),
-        await loadImage("./images/hole.png"),
-        await loadImage("./images/box.png")
-      ]
-    };
-
-    gameAssets.sounds = {
-      jump: await loadAudio("./sounds/jump.mp3"),
-      hit: await loadAudio("./sounds/hit.mp3"),
-      bgMusic: await loadAudio("./sounds/bg.mp3"),
-      love: await loadAudio("./sounds/love.mp3")
-    };
-
-    gameAssets.sounds.bgMusic.loop = true;
-
-  } catch (error) {
-    console.error("فشل تحميل الموارد:", error);
-    alert("الملفات المطلوبة مفقودة!");
-  }
-}
-
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject("فشل تحميل الصورة: " + src);
-    img.src = src;
-  });
-}
-
-function loadAudio(src) {
-  return new Promise((resolve, reject) => {
-    const audio = new Audio(src);
-    audio.oncanplaythrough = () => resolve(audio);
-    audio.onerror = () => reject("فشل تحميل الصوت: " + src);
-  });
-}
-
+// كائنات اللعبة
 let player = {
-  x: 100,
-  y: 0,
-  width: 50,
-  height: 80,
-  vy: 0,
-  isJumping: false
+    x: 100,
+    y: 300,
+    width: 50,
+    height: 80,
+    vy: 0,
+    jumping: false,
+    img: new Image(),
+    targetX: 100,
+    targetY: 300
 };
+player.img.src = "images/girl.png";
 
 let boy = {
-  x: canvas.width + 100,
-  y: 270,
-  width: 60,
-  height: 100,
-  speed: 2
+    x: 800,
+    y: 270,
+    width: 60,
+    height: 100,
+    targetX: 600,
+    targetY: 270,
+    img: new Image()
 };
+boy.img.src = "images/boy.png";
 
-let gameState = {
-  groundY: 0,
-  gravity: 0.8,
-  flowers: [],
-  obstacles: [],
-  score: 0,
-  isGameOver: false,
-  isEnding: false,
-  boyMoving: false,
-  loveShown: false,
-  fallingFlowers: []
-};
+let ground = 350;
+let gravity = 0.8;
+let flowers = [];
+let obstacles = [];
+let flowerParticles = [];
+let score = 0;
+let gameOver = false;
+let showBoy = false;
+let isEnding = false;
 
-function resetGamePositions() {
-  gameState.groundY = canvas.height - 50;
-  player.y = gameState.groundY - player.height;
-  boy.x = canvas.width + 100;
-}
+// تحميل الأصول
+let background = new Image();
+background.src = "images/background.png";
 
-function initControls() {
-  const handleJumpStart = (e) => {
+let flowerImg = new Image();
+flowerImg.src = "images/flower.png";
+
+let obstacleImgs = ["images/fire.png", "images/hole.png", "images/box.png"].map(src => {
+    let img = new Image();
+    img.src = src;
+    return img;
+});
+
+// الصوتيات
+let jumpSound = new Audio("sounds/jump.mp3");
+let hitSound = new Audio("sounds/hit.mp3");
+let bgMusic = new Audio("sounds/bg.mp3");
+let loveMusic = new Audio("sounds/love.mp3");
+
+bgMusic.loop = true;
+
+// أحداث التحكم
+document.addEventListener("keydown", (e) => {
+    if (e.code === "Space" && !player.jumping) {
+        player.vy = -20;
+        player.jumping = true;
+        jumpSound.play();
+    }
+});
+
+canvas.addEventListener("touchstart", (e) => {
     e.preventDefault();
-    if (!gameState.isGameOver && !player.isJumping && !gameState.isEnding) {
-      player.vy = -20;
-      player.isJumping = true;
-      gameAssets.sounds.jump.play().catch(() => {});
+    if (!player.jumping) {
+        player.vy = -20;
+        player.jumping = true;
+        jumpSound.play();
     }
-  };
+});
 
-  canvas.addEventListener("touchstart", handleJumpStart);
-  canvas.addEventListener("touchend", (e) => e.preventDefault());
-  canvas.addEventListener("mousedown", handleJumpStart);
-  canvas.addEventListener("mouseup", (e) => e.preventDefault());
+// منع التمرير باللمس
+document.body.addEventListener("touchstart", (e) => e.preventDefault(), { passive: false });
+document.body.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
 
-  document.addEventListener("keydown", (e) => {
-    if ((e.code === "Space" || e.code === "ArrowUp") && !player.isJumping) {
-      handleJumpStart(e);
-    }
-    if (gameState.isGameOver && e.code === "Enter") {
-      location.reload();
-    }
-  });
+// وظائف اللعبة
+function spawnFlower() {
+    flowers.push({ x: canvas.width, y: ground - 40, width: 30, height: 30 });
 }
 
-function spawnObject(type) {
-  const baseY = gameState.groundY - 40;
-
-  if (type === "flower") {
-    gameState.flowers.push({
-      x: canvas.width,
-      y: baseY,
-      width: 30,
-      height: 30
+function spawnObstacle() {
+    let i = Math.floor(Math.random() * obstacleImgs.length);
+    obstacles.push({
+        x: canvas.width,
+        y: ground - 30,
+        width: 40,
+        height: 40,
+        img: obstacleImgs[i]
     });
-  } else {
-    gameState.obstacles.push({
-      x: canvas.width,
-      y: baseY,
-      width: 40,
-      height: 40,
-      type: Math.floor(Math.random() * 3)
-    });
-  }
 }
 
-function checkCollisions() {
-  gameState.flowers.forEach((flower, index) => {
-    if (detectCollision(player, flower)) {
-      gameState.score++;
-      gameState.flowers.splice(index, 1);
-      if (gameState.score >= 9 && !gameState.isEnding) {
-        gameState.isEnding = true;
-        gameAssets.sounds.bgMusic.pause();
-        gameAssets.sounds.love.play();
-        setTimeout(() => {
-          gameState.boyMoving = true;
-        }, 1000);
-      }
-    }
-  });
-
-  gameState.obstacles.forEach(obstacle => {
-    if (detectCollision(player, obstacle)) {
-      gameAssets.sounds.hit.play().catch(() => {});
-      gameState.isGameOver = true;
-      gameAssets.sounds.bgMusic.pause();
-    }
-  });
-}
-
-function detectCollision(a, b) {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
-}
-
-function updateGame() {
-  if (gameState.isGameOver || gameState.loveShown) return;
-
-  if (!gameState.isEnding) {
-    player.y += player.vy;
-    player.vy += gameState.gravity;
-
-    if (player.y + player.height > gameState.groundY) {
-      player.y = gameState.groundY - player.height;
-      player.vy = 0;
-      player.isJumping = false;
-    }
-
-    gameState.flowers.forEach(f => f.x -= 4);
-    gameState.obstacles.forEach(o => o.x -= 5);
-
-    gameState.flowers = gameState.flowers.filter(f => f.x + f.width > 0);
-    gameState.obstacles = gameState.obstacles.filter(o => o.x + o.width > 0);
-
-    checkCollisions();
-  }
-
-  if (gameState.boyMoving) {
-    boy.x -= boy.speed;
-    if (boy.x <= player.x + 70) {
-      gameState.boyMoving = false;
-      gameState.loveShown = true;
-      for (let i = 0; i < 100; i++) {
-        gameState.fallingFlowers.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * -canvas.height,
-          speed: 1 + Math.random() * 2
+function createFlowerParticles() {
+    for (let i = 0; i < score; i++) {
+        flowerParticles.push({
+            x: Math.random() * canvas.width,
+            y: -Math.random() * 100,
+            vy: Math.random() * 2 + 1,
+            rotate: 0,
+            rotationSpeed: (Math.random() - 0.5) * 0.2
         });
-      }
     }
-  }
-
-  gameState.fallingFlowers.forEach(flower => {
-    flower.y += flower.speed;
-  });
 }
 
-function drawScene() {
-  ctx.drawImage(gameAssets.images.background, 0, 0, canvas.width, canvas.height);
-  ctx.drawImage(gameAssets.images.player, player.x, player.y, player.width, player.height);
+function update() {
+    if (gameOver) return;
 
-  if (gameState.boyMoving || gameState.loveShown) {
-    ctx.drawImage(gameAssets.images.boy, boy.x, boy.y, boy.width, boy.height);
-  }
+    // فيزياء اللاعب
+    player.y += player.vy;
+    player.vy += gravity;
 
-  gameState.flowers.forEach(flower => {
-    ctx.drawImage(gameAssets.images.flower, flower.x, flower.y, flower.width, flower.height);
-  });
+    if (player.y >= ground - player.height) {
+        player.y = ground - player.height;
+        player.vy = 0;
+        player.jumping = false;
+    }
 
-  gameState.obstacles.forEach(obstacle => {
-    ctx.drawImage(gameAssets.images.obstacles[obstacle.type], obstacle.x, obstacle.y, obstacle.width, obstacle.height);
-  });
+    // نهاية اللعبة
+    if (isEnding) {
+        player.x += (player.targetX - player.x) * 0.05;
+        boy.x += (boy.targetX - boy.x) * 0.05;
 
-  if (!gameState.loveShown) {
-    ctx.fillStyle = "#000";
-    ctx.font = "24px Arial";
-    ctx.fillText(`النقاط: ${gameState.score}`, 20, 40);
-  }
+        flowerParticles.forEach(p => {
+            p.y += p.vy;
+            p.vy += 0.3;
+            p.rotate += p.rotationSpeed;
 
-  if (gameState.loveShown) {
-    ctx.fillStyle = "black";
-    ctx.font = "48px Arial";
-    ctx.textAlign = "center";
-    ctx.fillText("I LOVE YOU MARIOMA", canvas.width / 2, canvas.height / 2);
-    ctx.textAlign = "start";
+            if (p.y > canvas.height) {
+                p.y = -10;
+                p.vy = Math.random() * 2 + 1;
+            }
+        });
+        return;
+    }
 
-    gameState.fallingFlowers.forEach(flower => {
-      ctx.drawImage(gameAssets.images.flower, flower.x, flower.y, 30, 30);
+    // تحديث العناصر
+    flowers.forEach(f => f.x -= 4);
+    obstacles.forEach(o => o.x -= 5);
+
+    flowers = flowers.filter(f => f.x + f.width > 0);
+    obstacles = obstacles.filter(o => o.x + o.width > 0);
+
+    flowers.forEach((f, i) => {
+        if (collision(player, f)) {
+            flowers.splice(i, 1);
+            score++;
+        }
     });
-  }
+
+    obstacles.forEach((o) => {
+        if (collision(player, o)) {
+            hitSound.play();
+            gameOver = true;
+            bgMusic.pause();
+        }
+    });
+
+    if (score >= 9 && !showBoy) {
+        showBoy = true;
+        isEnding = true;
+        player.targetX = canvas.width/2 - 100;
+        boy.targetX = canvas.width/2 + 40;
+        loveMusic.play();
+        bgMusic.pause();
+        createFlowerParticles();
+        clearInterval(flowerInterval);
+        clearInterval(obstacleInterval);
+    }
 }
 
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+
+    // رسم العناصر
+    ctx.drawImage(player.img, player.x, player.y, player.width, player.height);
+    
+    flowers.forEach(f => {
+        ctx.drawImage(flowerImg, f.x, f.y, f.width, f.height);
+    });
+
+    obstacles.forEach(o => {
+        ctx.drawImage(o.img, o.x, o.y, o.width, o.height);
+    });
+
+    if (showBoy) {
+        ctx.drawImage(boy.img, boy.x, boy.y, boy.width, boy.height);
+        ctx.fillStyle = "#fff";
+        ctx.font = "24px Arial";
+        ctx.fillText("LOVE YOU MARIOMA", canvas.width/2 - 120, 150);
+        
+        flowerParticles.forEach(p => {
+            ctx.save();
+            ctx.translate(p.x + 15, p.y + 15);
+            ctx.rotate(p.rotate);
+            ctx.drawImage(flowerImg, -15, -15, 30, 30);
+            ctx.restore();
+        });
+    }
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "20px Arial";
+    ctx.fillText("Score: " + score, 10, 30);
+
+    if (gameOver) {
+        ctx.fillStyle = "#fff";
+        ctx.font = "40px Arial";
+        ctx.fillText("Game Over", canvas.width/2 - 100, canvas.height/2 - 50);
+        createRestartButton();
+    }
+}
+
+// اكتشاف التصادم
+function collision(a, b) {
+    return a.x < b.x + b.width &&
+           a.x + a.width > b.x &&
+           a.y < b.y + b.height &&
+           a.y + a.height > b.y;
+}
+
+// إنشاء الأزرار
+function createStartButton() {
+    const button = document.createElement("button");
+    button.innerHTML = "Start Game";
+    button.style.cssText = `
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 24px;
+        padding: 15px 30px;
+        background: #ff4444;
+        color: white;
+        border: none;
+        border-radius: 25px;
+        cursor: pointer;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        transition: transform 0.2s;
+        z-index: 100;
+    `;
+    button.addEventListener("touchstart", (e) => e.preventDefault());
+    document.body.appendChild(button);
+
+    button.addEventListener("click", () => {
+        bgMusic.play();
+        button.remove();
+        startGame();
+    });
+}
+
+function createRestartButton() {
+    const button = document.createElement("button");
+    button.innerHTML = "Restart Game";
+    button.style.cssText = `
+        position: fixed;
+        left: 50%;
+        top: 60%;
+        transform: translate(-50%, -50%);
+        font-size: 24px;
+        padding: 15px 30px;
+        background: #ff4444;
+        color: white;
+        border: none;
+        border-radius: 25px;
+        cursor: pointer;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        transition: transform 0.2s;
+        z-index: 100;
+    `;
+    button.addEventListener("touchstart", (e) => e.preventDefault());
+    document.body.appendChild(button);
+
+    button.addEventListener("click", () => location.reload());
+}
+
+// بدء اللعبة
+let flowerInterval, obstacleInterval;
+
+function startGame() {
+    resizeCanvas();
+    flowers = [];
+    obstacles = [];
+    flowerParticles = [];
+    score = 0;
+    gameOver = false;
+    showBoy = false;
+    isEnding = false;
+    
+    player = {
+        ...player,
+        x: 100,
+        y: ground - player.height,
+        vy: 0,
+        jumping: false
+    };
+
+    flowerInterval = setInterval(spawnFlower, 3000);
+    obstacleInterval = setInterval(spawnObstacle, 4000);
+    gameLoop();
+}
+
+// الحلقة الرئيسية
 function gameLoop() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  updateGame();
-  drawScene();
-  requestAnimationFrame(gameLoop);
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
 }
 
-async function startGame() {
-  setupCanvas();
-  await loadResources();
-  initControls();
-  resetGamePositions();
-
-  setInterval(() => {
-    if (!gameState.isEnding && !gameState.loveShown) spawnObject("flower");
-  }, 3000);
-  setInterval(() => {
-    if (!gameState.isEnding && !gameState.loveShown) spawnObject("obstacle");
-  }, 4000);
-
-  document.addEventListener("click", () => {
-    gameAssets.sounds.bgMusic.play().catch(() => {});
-  }, { once: true });
-
-  gameLoop();
-}
-
-startGame();
+// التهيئة الأولية
+resizeCanvas();
+createStartButton();
