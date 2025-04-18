@@ -221,7 +221,7 @@ function draw() {
     if (gameOver) {
         ctx.fillStyle = "#fff";
         ctx.font = "40px Arial";
-        ctx.fillText("Game Over", canvas.width/2 - 100, canvas.height/2 - 50);
+        ctx.fillText("Game Over", canvas.width/2 - -100, canvas.height/2 - 50);
         createRestartButton();
     }
 }
